@@ -5,6 +5,7 @@ import type { AppEnv } from "./env";
 import { authRoutes } from "./routes/auth";
 import { budgetsRoutes } from "./routes/budgets";
 import { categoriesRoutes } from "./routes/categories";
+import { extractionRoutes } from "./routes/extraction";
 import { receiptsRoutes } from "./routes/receipts";
 import { usersRoutes } from "./routes/users";
 
@@ -16,6 +17,7 @@ function errorCode(status: number) {
   if (status === 403) return "forbidden";
   if (status === 404) return "not_found";
   if (status === 409) return "conflict";
+  if (status === 413) return "payload_too_large";
   return "internal_error";
 }
 
@@ -36,6 +38,7 @@ app.route("/api/users", usersRoutes);
 app.route("/api/categories", categoriesRoutes);
 app.route("/api/budgets", budgetsRoutes);
 app.route("/api/receipts", receiptsRoutes);
+app.route("/api", extractionRoutes);
 
 app.get("*", async (c) => c.env.ASSETS.fetch(c.req.raw));
 
