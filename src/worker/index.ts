@@ -3,6 +3,9 @@ import { HTTPException } from "hono/http-exception";
 import type { StatusCode } from "hono/utils/http-status";
 import type { AppEnv } from "./env";
 import { authRoutes } from "./routes/auth";
+import { budgetsRoutes } from "./routes/budgets";
+import { categoriesRoutes } from "./routes/categories";
+import { usersRoutes } from "./routes/users";
 
 export const app = new Hono<{ Bindings: AppEnv }>();
 
@@ -28,6 +31,9 @@ app.onError((error, c) => {
 
 app.get("/api/health", (c) => c.json({ ok: true }));
 app.route("/api/auth", authRoutes);
+app.route("/api/users", usersRoutes);
+app.route("/api/categories", categoriesRoutes);
+app.route("/api/budgets", budgetsRoutes);
 
 app.get("*", async (c) => c.env.ASSETS.fetch(c.req.raw));
 
