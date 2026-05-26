@@ -1,7 +1,25 @@
 import { describe, expect, it } from 'vitest';
+import type { AppEnv } from '../../src/worker/env';
 import { app } from '../../src/worker/index';
 
-const env = { ADMIN_BOOTSTRAP_PASSWORD: 'yesasia' } as never;
+function unusedBinding<T>(name: string): T {
+  return new Proxy(
+    {},
+    {
+      get() {
+        throw new Error(`${name} binding is not available in this test`);
+      }
+    }
+  ) as T;
+}
+
+const env: AppEnv = {
+  ADMIN_BOOTSTRAP_PASSWORD: 'yesasia',
+  APP_ENV: 'test',
+  ASSETS: unusedBinding<Fetcher>('ASSETS'),
+  AI: unusedBinding<Ai>('AI'),
+  DB: unusedBinding<D1Database>('DB')
+};
 
 describe('health route', () => {
   it('returns ok JSON', async () => {
