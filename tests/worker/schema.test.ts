@@ -16,6 +16,8 @@ const required = [
   'CREATE TABLE audit_log',
   'CREATE UNIQUE INDEX users_username_unique',
   'CREATE INDEX receipts_user_purchase_date_idx',
+  'CREATE INDEX budgets_user_month_category_idx',
+  'CREATE UNIQUE INDEX budgets_user_category_month_unique',
   'CREATE UNIQUE INDEX monthly_reports_user_month_unique'
 ];
 
@@ -179,6 +181,30 @@ describe('initial D1 migration', () => {
 
     const count = await db.prepare('SELECT COUNT(*) AS count FROM receipt_items').first<{ count: number }>();
     expect(count?.count).toBe(0);
+  });
+
+
+  it('enforces one budget per user, category, and month', async () => {
+    const db = await createDb();
+    await seedUsers(db);
+
+    await db
+      .prepare(
+        `INSERT INTO budgets (id, user_id, category_id, month, currency, amount, created_at, updated_at)
+         VALUES ('budget_1', 'user_1', 'cat_builtin_groceries', '2026-05', 'USD', 5000, ?, ?)`
+      )
+      .bind(now, now)
+      .run();
+
+    await expectDbError(
+      db
+        .prepare(
+          `INSERT INTO budgets (id, user_id, category_id, month, currency, amount, created_at, updated_at)
+           VALUES ('budget_2', 'user_1', 'cat_builtin_groceries', '2026-05', 'USD', 6000, ?, ?)`
+        )
+        .bind(now, now)
+        .run()
+    );
   });
 
   it('rejects cross-user custom category use for receipts, receipt items, and budgets', async () => {

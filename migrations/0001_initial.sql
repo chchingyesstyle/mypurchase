@@ -121,6 +121,7 @@ CREATE INDEX receipts_user_category_idx ON receipts(user_id, category_id);
 CREATE INDEX receipt_items_user_receipt_idx ON receipt_items(user_id, receipt_id);
 CREATE INDEX receipt_items_user_category_idx ON receipt_items(user_id, category_id);
 CREATE INDEX budgets_user_month_category_idx ON budgets(user_id, month, category_id);
+CREATE UNIQUE INDEX budgets_user_category_month_unique ON budgets(user_id, category_id, month);
 CREATE UNIQUE INDEX monthly_reports_user_month_unique ON monthly_reports(user_id, month);
 CREATE UNIQUE INDEX user_month_versions_user_month_unique ON user_month_versions(user_id, month);
 

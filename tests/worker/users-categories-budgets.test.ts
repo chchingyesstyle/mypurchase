@@ -62,6 +62,22 @@ async function seedCategory(input: { id: string; userId: string; name: string })
     .run();
 }
 
+async function monthVersion(userId: string, month: string) {
+  const row = await env.DB.prepare('SELECT records_version FROM user_month_versions WHERE user_id = ? AND month = ?')
+    .bind(userId, month)
+    .first<{ records_version: number }>();
+  return row?.records_version ?? 0;
+}
+
+async function budgetCount(userId: string, categoryId: string, month: string) {
+  const row = await env.DB.prepare(
+    'SELECT COUNT(*) AS count FROM budgets WHERE user_id = ? AND category_id = ? AND month = ?'
+  )
+    .bind(userId, categoryId, month)
+    .first<{ count: number }>();
+  return row?.count ?? 0;
+}
+
 async function login(username: string, password: string) {
   const response = await app.request(
     '/api/auth/login',
@@ -211,6 +227,90 @@ describe('users, categories, and budgets routes', () => {
     });
   });
 
+
+  it('updates an existing budget on repeated PUT for the same user, category, and month', async () => {
+    await seedUser({ id: 'user_1', username: 'u1', password: 'user-secret' });
+    const user = await login('u1', 'user-secret');
+
+    for (const amount of [10000, 12500]) {
+      const response = await app.request(
+        '/api/budgets/cat_builtin_groceries/2026-05',
+        {
+          method: 'PUT',
+          headers: { cookie: user.cookie, 'content-type': 'application/json', 'x-csrf-token': user.csrfToken },
+          body: JSON.stringify({ amount, currency: 'USD' })
+        },
+        env
+      );
+      expect(response.status).toBe(200);
+    }
+
+    expect(await budgetCount('user_1', 'cat_builtin_groceries', '2026-05')).toBe(1);
+    const budget = await env.DB.prepare(
+      'SELECT amount FROM budgets WHERE user_id = ? AND category_id = ? AND month = ?'
+    )
+      .bind('user_1', 'cat_builtin_groceries', '2026-05')
+      .first<{ amount: number }>();
+    expect(budget?.amount).toBe(12500);
+  });
+
+  it('increments month version when putting and deleting budgets', async () => {
+    await seedUser({ id: 'user_1', username: 'u1', password: 'user-secret' });
+    const user = await login('u1', 'user-secret');
+
+    const putResponse = await app.request(
+      '/api/budgets/cat_builtin_groceries/2026-05',
+      {
+        method: 'PUT',
+        headers: { cookie: user.cookie, 'content-type': 'application/json', 'x-csrf-token': user.csrfToken },
+        body: JSON.stringify({ amount: 10000, currency: 'USD' })
+      },
+      env
+    );
+    expect(putResponse.status).toBe(200);
+    expect(await monthVersion('user_1', '2026-05')).toBe(1);
+
+    const deleteResponse = await app.request(
+      '/api/budgets/cat_builtin_groceries/2026-05',
+      {
+        method: 'DELETE',
+        headers: { cookie: user.cookie, 'x-csrf-token': user.csrfToken }
+      },
+      env
+    );
+    expect(deleteResponse.status).toBe(200);
+    expect(await monthVersion('user_1', '2026-05')).toBe(2);
+  });
+
+  it('increments affected month versions when deleting a custom category with budgets', async () => {
+    await seedUser({ id: 'user_1', username: 'u1', password: 'user-secret' });
+    await seedCategory({ id: 'cat_user_1', userId: 'user_1', name: 'User 1 custom' });
+    const user = await login('u1', 'user-secret');
+
+    const putResponse = await app.request(
+      '/api/budgets/cat_user_1/2026-05',
+      {
+        method: 'PUT',
+        headers: { cookie: user.cookie, 'content-type': 'application/json', 'x-csrf-token': user.csrfToken },
+        body: JSON.stringify({ amount: 10000, currency: 'USD' })
+      },
+      env
+    );
+    expect(putResponse.status).toBe(200);
+
+    const deleteResponse = await app.request(
+      '/api/categories/cat_user_1',
+      {
+        method: 'DELETE',
+        headers: { cookie: user.cookie, 'x-csrf-token': user.csrfToken }
+      },
+      env
+    );
+
+    expect(deleteResponse.status).toBe(200);
+    expect(await budgetCount('user_1', 'cat_user_1', '2026-05')).toBe(0);
+    expect(await monthVersion('user_1', '2026-05')).toBe(2);
+  });
 
   it('returns 404 when deleting a missing budget for a visible category', async () => {
     await seedUser({ id: 'user_1', username: 'u1', password: 'user-secret' });

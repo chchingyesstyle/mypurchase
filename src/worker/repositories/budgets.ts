@@ -1,5 +1,6 @@
 import { findVisibleCategory } from './categories';
 import { newId, nowIso, rowToCamel } from './db';
+import { incrementUserMonthVersion } from './monthVersions';
 
 export type Budget = {
   id: string;
@@ -27,8 +28,11 @@ function rowToBudget(row: BudgetRow) {
   return rowToCamel(row) as Budget;
 }
 
-async function findBudget(db: D1Database, userId: string, id: string) {
-  const row = await db.prepare('SELECT * FROM budgets WHERE id = ? AND user_id = ?').bind(id, userId).first<BudgetRow>();
+async function findBudgetByKey(db: D1Database, userId: string, categoryId: string, month: string) {
+  const row = await db
+    .prepare('SELECT * FROM budgets WHERE user_id = ? AND category_id = ? AND month = ?')
+    .bind(userId, categoryId, month)
+    .first<BudgetRow>();
   return row ? rowToBudget(row) : null;
 }
 
@@ -53,29 +57,21 @@ export async function upsertBudget(
   const category = await findVisibleCategory(db, input.userId, input.categoryId);
   if (!category) return null;
 
-  const existing = await db
-    .prepare('SELECT id FROM budgets WHERE user_id = ? AND category_id = ? AND month = ? LIMIT 1')
-    .bind(input.userId, input.categoryId, input.month)
-    .first<{ id: string }>();
   const now = nowIso();
-
-  if (existing) {
-    await db
-      .prepare('UPDATE budgets SET currency = ?, amount = ?, updated_at = ? WHERE id = ? AND user_id = ?')
-      .bind(input.currency, input.amount, now, existing.id, input.userId)
-      .run();
-    return findBudget(db, input.userId, existing.id);
-  }
-
-  const id = newId('budget');
   await db
     .prepare(
       `INSERT INTO budgets (id, user_id, category_id, month, currency, amount, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(user_id, category_id, month) DO UPDATE SET
+         currency = excluded.currency,
+         amount = excluded.amount,
+         updated_at = excluded.updated_at`
     )
-    .bind(id, input.userId, input.categoryId, input.month, input.currency, input.amount, now, now)
+    .bind(newId('budget'), input.userId, input.categoryId, input.month, input.currency, input.amount, now, now)
     .run();
-  return findBudget(db, input.userId, id);
+
+  await incrementUserMonthVersion(db, input.userId, input.month);
+  return findBudgetByKey(db, input.userId, input.categoryId, input.month);
 }
 
 export async function deleteBudget(db: D1Database, userId: string, categoryId: string, month: string) {
@@ -89,5 +85,6 @@ export async function deleteBudget(db: D1Database, userId: string, categoryId: s
   if (!existing) return false;
 
   await db.prepare('DELETE FROM budgets WHERE id = ? AND user_id = ?').bind(existing.id, userId).run();
+  await incrementUserMonthVersion(db, userId, month);
   return true;
 }

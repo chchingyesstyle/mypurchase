@@ -1,5 +1,6 @@
 import type { Category } from '../../shared/types';
 import { newId, nowIso, rowToCamel } from './db';
+import { incrementUserMonthVersions } from './monthVersions';
 
 export async function listVisibleCategories(db: D1Database, userId: string): Promise<Category[]> {
   const result = await db
@@ -77,9 +78,19 @@ export async function deleteOwnedCustomCategory(db: D1Database, userId: string, 
     .first<{ id: string }>();
   if (!existing) return false;
 
+  const affectedMonths = await db
+    .prepare('SELECT DISTINCT month FROM budgets WHERE user_id = ? AND category_id = ? ORDER BY month')
+    .bind(userId, categoryId)
+    .all<{ month: string }>();
+
   await db
     .prepare("DELETE FROM categories WHERE id = ? AND user_id = ? AND kind = 'custom'")
     .bind(categoryId, userId)
     .run();
+  await incrementUserMonthVersions(
+    db,
+    userId,
+    affectedMonths.results.map((row) => row.month)
+  );
   return true;
 }
