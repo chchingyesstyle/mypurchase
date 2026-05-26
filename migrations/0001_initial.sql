@@ -28,6 +28,10 @@ CREATE TABLE categories (
   color TEXT NOT NULL,
   icon TEXT NOT NULL,
   created_at TEXT NOT NULL,
+  CHECK (
+    (kind = 'built_in' AND user_id IS NULL) OR
+    (kind = 'custom' AND user_id IS NOT NULL)
+  ),
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
@@ -119,6 +123,84 @@ CREATE INDEX receipt_items_user_category_idx ON receipt_items(user_id, category_
 CREATE INDEX budgets_user_month_category_idx ON budgets(user_id, month, category_id);
 CREATE UNIQUE INDEX monthly_reports_user_month_unique ON monthly_reports(user_id, month);
 CREATE UNIQUE INDEX user_month_versions_user_month_unique ON user_month_versions(user_id, month);
+
+CREATE TRIGGER receipts_category_owner_insert
+BEFORE INSERT ON receipts
+FOR EACH ROW
+WHEN NEW.category_id IS NOT NULL AND NOT EXISTS (
+  SELECT 1
+  FROM categories
+  WHERE id = NEW.category_id
+    AND (user_id IS NULL OR user_id = NEW.user_id)
+)
+BEGIN
+  SELECT RAISE(ABORT, 'receipt category must be built-in or owned by receipt user');
+END;
+
+CREATE TRIGGER receipts_category_owner_update
+BEFORE UPDATE OF user_id, category_id ON receipts
+FOR EACH ROW
+WHEN NEW.category_id IS NOT NULL AND NOT EXISTS (
+  SELECT 1
+  FROM categories
+  WHERE id = NEW.category_id
+    AND (user_id IS NULL OR user_id = NEW.user_id)
+)
+BEGIN
+  SELECT RAISE(ABORT, 'receipt category must be built-in or owned by receipt user');
+END;
+
+CREATE TRIGGER receipt_items_category_owner_insert
+BEFORE INSERT ON receipt_items
+FOR EACH ROW
+WHEN NEW.category_id IS NOT NULL AND NOT EXISTS (
+  SELECT 1
+  FROM categories
+  WHERE id = NEW.category_id
+    AND (user_id IS NULL OR user_id = NEW.user_id)
+)
+BEGIN
+  SELECT RAISE(ABORT, 'receipt item category must be built-in or owned by item user');
+END;
+
+CREATE TRIGGER receipt_items_category_owner_update
+BEFORE UPDATE OF user_id, category_id ON receipt_items
+FOR EACH ROW
+WHEN NEW.category_id IS NOT NULL AND NOT EXISTS (
+  SELECT 1
+  FROM categories
+  WHERE id = NEW.category_id
+    AND (user_id IS NULL OR user_id = NEW.user_id)
+)
+BEGIN
+  SELECT RAISE(ABORT, 'receipt item category must be built-in or owned by item user');
+END;
+
+CREATE TRIGGER budgets_category_owner_insert
+BEFORE INSERT ON budgets
+FOR EACH ROW
+WHEN NOT EXISTS (
+  SELECT 1
+  FROM categories
+  WHERE id = NEW.category_id
+    AND (user_id IS NULL OR user_id = NEW.user_id)
+)
+BEGIN
+  SELECT RAISE(ABORT, 'budget category must be built-in or owned by budget user');
+END;
+
+CREATE TRIGGER budgets_category_owner_update
+BEFORE UPDATE OF user_id, category_id ON budgets
+FOR EACH ROW
+WHEN NOT EXISTS (
+  SELECT 1
+  FROM categories
+  WHERE id = NEW.category_id
+    AND (user_id IS NULL OR user_id = NEW.user_id)
+)
+BEGIN
+  SELECT RAISE(ABORT, 'budget category must be built-in or owned by budget user');
+END;
 
 INSERT INTO categories (name, user_id, kind, color, icon, created_at, id) VALUES
   ('Groceries', NULL, 'built_in', '#22c55e', 'shopping-basket', '2026-01-01T00:00:00.000Z', 'cat_builtin_groceries'),
