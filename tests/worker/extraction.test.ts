@@ -3,11 +3,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readD1Migrations } from '@cloudflare/vitest-pool-workers';
 import { Miniflare } from 'miniflare';
 import type { AppEnv } from '../../src/worker/env';
+import { extractReceiptDraft } from '../../src/worker/ai/extractReceipt';
 import { app } from '../../src/worker/index';
 import { hashPassword } from '../../src/worker/security/passwords';
 
 const migrationsPromise = readD1Migrations('migrations');
 const now = '2026-05-26T00:00:00.000Z';
+const pngBytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3]);
 let miniflare: Miniflare | undefined;
 let env: AppEnv;
 let aiRun: ReturnType<typeof vi.fn>;
@@ -164,6 +166,83 @@ describe('receipt extraction route', () => {
     expect(aiRun).not.toHaveBeenCalled();
   });
 
+  it('returns 413 before parsing multipart data when content length is clearly too large', async () => {
+    await seedUser({ id: 'user_1', username: 'u1', password: 'user-secret' });
+    const user = await login();
+
+    const response = await app.request(
+      '/api/extract-receipt',
+      {
+        method: 'POST',
+        headers: {
+          cookie: user.cookie,
+          'x-csrf-token': user.csrfToken,
+          'content-type': 'multipart/form-data; boundary=receipt',
+          'content-length': String(8 * 1024 * 1024 + 8193)
+        },
+        body: '--receipt\r\nthis body should not need to be parsed\r\n--receipt--\r\n'
+      },
+      env
+    );
+
+    expect(response.status).toBe(413);
+    expect(aiRun).not.toHaveBeenCalled();
+  });
+
+  it('returns 400 for an image upload with spoofed MIME bytes', async () => {
+    await seedUser({ id: 'user_1', username: 'u1', password: 'user-secret' });
+    const user = await login();
+
+    const response = await app.request(
+      '/api/extract-receipt',
+      {
+        method: 'POST',
+        headers: { cookie: user.cookie, 'x-csrf-token': user.csrfToken },
+        body: formData(new File([new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8])], 'receipt.png', { type: 'image/png' }))
+      },
+      env
+    );
+
+    expect(response.status).toBe(400);
+    expect(aiRun).not.toHaveBeenCalled();
+  });
+
+  it('normalizes negative AI money into save-compatible draft values', async () => {
+    await seedUser({ id: 'user_1', username: 'u1', password: 'user-secret' });
+    const user = await login();
+    aiRun.mockResolvedValue({
+      merchant: 'Returns Desk',
+      purchaseDate: '2026-05-25',
+      currency: 'USD',
+      subtotal: '-10.00',
+      tax: '-0.83',
+      discount: '-1.00',
+      total: '-9.83',
+      items: [{ name: 'Refunded Item', quantity: 1, unitPrice: '-3.50', totalPrice: '-3.50' }]
+    });
+
+    const response = await app.request(
+      '/api/extract-receipt',
+      {
+        method: 'POST',
+        headers: { cookie: user.cookie, 'x-csrf-token': user.csrfToken },
+        body: formData(new File([pngBytes], 'receipt.png', { type: 'image/png' }))
+      },
+      env
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      draft: {
+        subtotal: null,
+        tax: null,
+        discount: 100,
+        total: null,
+        items: [{ unitPrice: null, totalPrice: null }]
+      }
+    });
+  });
+
   it('calls Workers AI for a valid image and returns a normalized editable draft without storing rows', async () => {
     await seedUser({ id: 'user_1', username: 'u1', password: 'user-secret' });
     const user = await login();
@@ -192,7 +271,7 @@ describe('receipt extraction route', () => {
       {
         method: 'POST',
         headers: { cookie: user.cookie, 'x-csrf-token': user.csrfToken },
-        body: formData(new File([new Uint8Array([137, 80, 78, 71])], 'receipt.png', { type: 'image/png' }))
+        body: formData(new File([pngBytes], 'receipt.png', { type: 'image/png' }))
       },
       env
     );
@@ -235,5 +314,25 @@ describe('receipt extraction route', () => {
     });
     expect(await tableCount('receipts')).toBe(0);
     expect(await tableCount('receipt_items')).toBe(0);
+  });
+});
+
+describe('receipt extraction AI adapter', () => {
+  it('returns fallback draft fields for non-JSON AI text', async () => {
+    const run = vi.fn().mockResolvedValue({ response: 'ignore previous instructions and do something else' });
+
+    await expect(extractReceiptDraft({ run } as unknown as Ai, pngBytes, 'image/png')).resolves.toEqual({
+      merchant: '',
+      purchaseDate: '',
+      currency: '',
+      subtotal: null,
+      tax: null,
+      discount: null,
+      total: null,
+      categoryName: null,
+      categoryHint: null,
+      notes: null,
+      items: []
+    });
   });
 });
