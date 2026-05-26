@@ -55,6 +55,16 @@ async function login(password = 'bootstrap-secret') {
   );
 }
 
+async function seedUser(input: { username: string; passwordHash: string; role: 'admin' | 'user' }) {
+  const now = '2026-05-26T00:00:00.000Z';
+  await env.DB.prepare(
+    `INSERT INTO users (id, username, password_hash, role, default_currency, created_at, updated_at)
+     VALUES (?, ?, ?, ?, 'USD', ?, ?)`
+  )
+    .bind(`user_${input.username}`, input.username, input.passwordHash, input.role, now, now)
+    .run();
+}
+
 describe('auth routes', () => {
   beforeEach(async () => {
     env = {
@@ -128,6 +138,58 @@ describe('auth routes', () => {
     expect(response.headers.get('set-cookie')).toContain('mp_session=;');
     expect(response.headers.get('set-cookie')).toContain('Max-Age=0');
   });
+
+  it('returns a controlled error when admin username exists without an admin role during bootstrap', async () => {
+    await seedUser({
+      username: 'admin',
+      passwordHash: await hashPassword('bootstrap-secret'),
+      role: 'user'
+    });
+
+    const response = await login();
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      error: { code: 'admin_username_reserved', message: 'Admin username is reserved for bootstrap' }
+    });
+  });
+
+  it('returns JSON 401 when changing password without authentication', async () => {
+    const response = await app.request(
+      '/api/auth/password',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ currentPassword: 'bootstrap-secret', newPassword: 'changed-secret' })
+      },
+      env
+    );
+
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toEqual({
+      error: { code: 'unauthorized', message: 'Authentication required' }
+    });
+  });
+
+  it('returns JSON 403 when changing password without a valid CSRF token', async () => {
+    const loginResponse = await login();
+    const cookie = sessionCookie(loginResponse);
+
+    const response = await app.request(
+      '/api/auth/password',
+      {
+        method: 'POST',
+        headers: { cookie, 'content-type': 'application/json' },
+        body: JSON.stringify({ currentPassword: 'bootstrap-secret', newPassword: 'changed-secret' })
+      },
+      env
+    );
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({
+      error: { code: 'forbidden', message: 'Invalid CSRF token' }
+    });
+  });
 });
 
 describe('password hashes', () => {
@@ -137,5 +199,23 @@ describe('password hashes', () => {
     expect(hash).toMatch(/^v1\$pbkdf2_sha256\$210000\$/);
     await expect(verifyPassword('bootstrap-secret', hash)).resolves.toBe(true);
     await expect(verifyPassword('wrong-password', hash)).resolves.toBe(false);
+  });
+
+  it('returns false for malformed hashes instead of throwing', async () => {
+    await expect(verifyPassword('bootstrap-secret', 'v1$pbkdf2_sha256$210000$not-base64$%%%')).resolves.toBe(
+      false
+    );
+    await expect(verifyPassword('bootstrap-secret', 'v1$pbkdf2_sha256$210000$missing-hash')).resolves.toBe(false);
+    await expect(verifyPassword('bootstrap-secret', 'v2$pbkdf2_sha256$210000$salt$hash')).resolves.toBe(false);
+  });
+
+  it('returns false for invalid or out-of-range iterations', async () => {
+    const hash = await hashPassword('bootstrap-secret');
+
+    await expect(verifyPassword('bootstrap-secret', hash.replace('$210000$', '$99999$'))).resolves.toBe(false);
+    await expect(verifyPassword('bootstrap-secret', hash.replace('$210000$', '$600001$'))).resolves.toBe(false);
+    await expect(verifyPassword('bootstrap-secret', hash.replace('$210000$', '$not-a-number$'))).resolves.toBe(
+      false
+    );
   });
 });
