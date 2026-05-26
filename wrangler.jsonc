@@ -1,0 +1,23 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "mypurchase",
+  "main": "src/worker/index.ts",
+  "compatibility_date": "2026-05-26",
+  "assets": {
+    "directory": "dist/client",
+    "binding": "ASSETS"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "mypurchase-db",
+      "database_id": "00000000-0000-0000-0000-000000000000"
+    }
+  ],
+  "ai": {
+    "binding": "AI"
+  },
+  "vars": {
+    "APP_ENV": "local"
+  }
+}
