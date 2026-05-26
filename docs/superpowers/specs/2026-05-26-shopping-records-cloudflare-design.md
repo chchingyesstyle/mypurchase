@@ -322,3 +322,4 @@ Manual verification:
 - Monthly report advice uses the lowest-cost Workers AI text-generation model that can reliably produce JSON advice from deterministic summaries. The implementation must isolate model choice behind one report-advice adapter.
 - Built-in starter categories are seeded by D1 migration, not by application startup.
 - Report cache invalidation uses `user_month_versions.records_version`.
+- Receipt and receipt-item category references use `ON DELETE SET NULL` so deleting a custom category does not delete historical purchase records.

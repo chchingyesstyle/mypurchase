@@ -419,7 +419,7 @@ export type ReceiptInput = {
 
 - [ ] **Step 3: Create migration**
 
-Create `migrations/0001_initial.sql` with the schema from the design spec. Use `TEXT` IDs, `INTEGER` money amounts in minor units, `CHECK` constraints for roles/kinds, foreign keys with `ON DELETE CASCADE`, and the indexes listed in the spec.
+Create `migrations/0001_initial.sql` with the schema from the design spec. Use `TEXT` IDs, `INTEGER` money amounts in minor units, `CHECK` constraints for roles/kinds, `ON DELETE CASCADE` for true ownership relationships, `ON DELETE SET NULL` for receipt and item category references, and the indexes listed in the spec.
 
 The migration must include these starter categories with `user_id NULL` and `kind = 'built_in'`: Groceries, Household, Personal care, Clothing, Electronics, Dining, Transport, Health, Gifts, Online shopping, Other.
 
