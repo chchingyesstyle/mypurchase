@@ -151,6 +151,32 @@ BEGIN
   SELECT RAISE(ABORT, 'receipt category must be built-in or owned by receipt user');
 END;
 
+CREATE TRIGGER receipt_items_receipt_owner_insert
+BEFORE INSERT ON receipt_items
+FOR EACH ROW
+WHEN NOT EXISTS (
+  SELECT 1
+  FROM receipts
+  WHERE id = NEW.receipt_id
+    AND user_id = NEW.user_id
+)
+BEGIN
+  SELECT RAISE(ABORT, 'receipt item user must match receipt user');
+END;
+
+CREATE TRIGGER receipt_items_receipt_owner_update
+BEFORE UPDATE OF receipt_id, user_id ON receipt_items
+FOR EACH ROW
+WHEN NOT EXISTS (
+  SELECT 1
+  FROM receipts
+  WHERE id = NEW.receipt_id
+    AND user_id = NEW.user_id
+)
+BEGIN
+  SELECT RAISE(ABORT, 'receipt item user must match receipt user');
+END;
+
 CREATE TRIGGER receipt_items_category_owner_insert
 BEFORE INSERT ON receipt_items
 FOR EACH ROW

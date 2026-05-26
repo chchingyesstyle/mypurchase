@@ -272,4 +272,34 @@ describe('initial D1 migration', () => {
 
     await expectDbError(db.prepare("UPDATE budgets SET category_id = 'cat_user_2' WHERE id = 'budget_1'").run());
   });
+  it('rejects receipt items whose user does not match the parent receipt owner', async () => {
+    const db = await createDb();
+    await seedUsers(db);
+
+    await db
+      .prepare(
+        "INSERT INTO receipts (id, user_id, merchant, purchase_date, currency, subtotal, tax, discount, total, category_id, notes, source_type, created_at, updated_at) VALUES ('receipt_1', 'user_1', 'Store', '2026-05-01', 'USD', NULL, NULL, NULL, 1200, NULL, NULL, 'manual', ?, ?)"
+      )
+      .bind(now, now)
+      .run();
+
+    await expectDbError(
+      db
+        .prepare(
+          "INSERT INTO receipt_items (id, receipt_id, user_id, name, quantity, unit_price, total_price, category_id, created_at) VALUES ('item_bad', 'receipt_1', 'user_2', 'Item', 1, 1200, 1200, NULL, ?)"
+        )
+        .bind(now)
+        .run()
+    );
+
+    await db
+      .prepare(
+        "INSERT INTO receipt_items (id, receipt_id, user_id, name, quantity, unit_price, total_price, category_id, created_at) VALUES ('item_1', 'receipt_1', 'user_1', 'Item', 1, 1200, 1200, NULL, ?)"
+      )
+      .bind(now)
+      .run();
+
+    await expectDbError(db.prepare("UPDATE receipt_items SET user_id = 'user_2' WHERE id = 'item_1'").run());
+  });
+
 });

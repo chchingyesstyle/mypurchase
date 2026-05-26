@@ -1,6 +1,6 @@
-import { findVisibleCategory } from './categories';
-import { newId, nowIso, rowToCamel } from './db';
-import { incrementUserMonthVersion, incrementUserMonthVersions } from './monthVersions';
+import { findVisibleCategory } from "./categories";
+import { newId, nowIso, rowToCamel } from "./db";
+import { incrementUserMonthVersionStatements } from "./monthVersions";
 
 export type ReceiptItemInput = {
   name: string;
@@ -20,7 +20,7 @@ export type ReceiptInput = {
   total: number;
   categoryId?: string | null;
   notes?: string | null;
-  sourceType: 'manual' | 'receipt_image';
+  sourceType: "manual" | "receipt_image";
   items: ReceiptItemInput[];
 };
 
@@ -36,7 +36,7 @@ export type Receipt = {
   total: number;
   categoryId: string | null;
   notes: string | null;
-  sourceType: 'manual' | 'receipt_image';
+  sourceType: "manual" | "receipt_image";
   createdAt: string;
   updatedAt: string;
 };
@@ -69,7 +69,7 @@ type ReceiptRow = {
   total: number;
   category_id: string | null;
   notes: string | null;
-  source_type: 'manual' | 'receipt_image';
+  source_type: "manual" | "receipt_image";
   created_at: string;
   updated_at: string;
 };
@@ -91,6 +91,8 @@ export type ReceiptListFilters = {
   merchant?: string;
   categoryId?: string;
   q?: string;
+  limit: number;
+  offset: number;
 };
 
 function rowToReceipt(row: ReceiptRow) {
@@ -101,8 +103,16 @@ function rowToReceiptItem(row: ReceiptItemRow) {
   return rowToCamel(row) as ReceiptItem;
 }
 
-function receiptMonth(receipt: Pick<Receipt | ReceiptInput, 'purchaseDate'>) {
+function receiptMonth(receipt: Pick<Receipt | ReceiptInput, "purchaseDate">) {
   return receipt.purchaseDate.slice(0, 7);
+}
+
+function nextMonth(month: string) {
+  const year = Number(month.slice(0, 4));
+  const monthNumber = Number(month.slice(5, 7));
+  const next = monthNumber === 12 ? 1 : monthNumber + 1;
+  const nextYear = monthNumber === 12 ? year + 1 : year;
+  return String(nextYear).padStart(4, "0") + "-" + String(next).padStart(2, "0");
 }
 
 async function categoriesAreVisible(db: D1Database, userId: string, categoryIds: Array<string | null | undefined>) {
@@ -114,7 +124,7 @@ async function categoriesAreVisible(db: D1Database, userId: string, categoryIds:
 }
 
 async function findOwnedReceipt(db: D1Database, userId: string, receiptId: string) {
-  const row = await db.prepare('SELECT * FROM receipts WHERE id = ? AND user_id = ?').bind(receiptId, userId).first<ReceiptRow>();
+  const row = await db.prepare("SELECT * FROM receipts WHERE id = ? AND user_id = ?").bind(receiptId, userId).first<ReceiptRow>();
   return row ? rowToReceipt(row) : null;
 }
 
@@ -129,7 +139,9 @@ function insertReceiptItemStatements(
 ) {
   return input.items.map((item) =>
     db
-      .prepare("INSERT INTO receipt_items (id, receipt_id, user_id, name, quantity, unit_price, total_price, category_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .prepare(
+        "INSERT INTO receipt_items (id, receipt_id, user_id, name, quantity, unit_price, total_price, category_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+      )
       .bind(
         newId("ritem"),
         input.receiptId,
@@ -149,14 +161,12 @@ export async function createReceipt(db: D1Database, userId: string, input: Recei
     return null;
   }
 
-  const id = newId('receipt');
+  const id = newId("receipt");
   const now = nowIso();
   await db.batch([
     db
       .prepare(
-        `INSERT INTO receipts
-           (id, user_id, merchant, purchase_date, currency, subtotal, tax, discount, total, category_id, notes, source_type, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        "INSERT INTO receipts (id, user_id, merchant, purchase_date, currency, subtotal, tax, discount, total, category_id, notes, source_type, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
       )
       .bind(
         id,
@@ -174,38 +184,38 @@ export async function createReceipt(db: D1Database, userId: string, input: Recei
         now,
         now
       ),
-    ...insertReceiptItemStatements(db, { receiptId: id, userId, createdAt: now, items: input.items })
+    ...insertReceiptItemStatements(db, { receiptId: id, userId, createdAt: now, items: input.items }),
+    ...incrementUserMonthVersionStatements(db, userId, [receiptMonth(input)], now)
   ]);
-  await incrementUserMonthVersion(db, userId, receiptMonth(input));
 
   const receipt = await getReceiptDetail(db, userId, id);
-  if (!receipt) throw new Error('Failed to create receipt');
+  if (!receipt) throw new Error("Failed to create receipt");
   return receipt;
 }
 
-export async function listReceipts(db: D1Database, userId: string, filters: ReceiptListFilters = {}) {
-  const clauses = ['user_id = ?'];
+export async function listReceipts(db: D1Database, userId: string, filters: ReceiptListFilters) {
+  const clauses = ["user_id = ?"];
   const values: unknown[] = [userId];
   if (filters.month) {
-    clauses.push("purchase_date >= ? AND purchase_date < date(?, '+1 month')");
-    values.push(`${filters.month}-01`, `${filters.month}-01`);
+    clauses.push("purchase_date >= ? AND purchase_date < ?");
+    values.push(filters.month + "-01", nextMonth(filters.month) + "-01");
   }
   if (filters.merchant) {
-    clauses.push('merchant LIKE ?');
-    values.push(`%${filters.merchant}%`);
+    clauses.push("merchant LIKE ?");
+    values.push("%" + filters.merchant + "%");
   }
   if (filters.categoryId) {
-    clauses.push('category_id = ?');
+    clauses.push("category_id = ?");
     values.push(filters.categoryId);
   }
   if (filters.q) {
-    clauses.push('(merchant LIKE ? OR notes LIKE ?)');
-    values.push(`%${filters.q}%`, `%${filters.q}%`);
+    clauses.push("(merchant LIKE ? OR notes LIKE ?)");
+    values.push("%" + filters.q + "%", "%" + filters.q + "%");
   }
 
   const result = await db
-    .prepare(`SELECT * FROM receipts WHERE ${clauses.join(' AND ')} ORDER BY purchase_date DESC, created_at DESC`)
-    .bind(...values)
+    .prepare("SELECT * FROM receipts WHERE " + clauses.join(" AND ") + " ORDER BY purchase_date DESC, created_at DESC LIMIT ? OFFSET ?")
+    .bind(...values, filters.limit, filters.offset)
     .all<ReceiptRow>();
   return result.results.map(rowToReceipt);
 }
@@ -215,7 +225,7 @@ export async function getReceiptDetail(db: D1Database, userId: string, receiptId
   if (!receipt) return null;
 
   const result = await db
-    .prepare('SELECT * FROM receipt_items WHERE receipt_id = ? AND user_id = ? ORDER BY created_at, id')
+    .prepare("SELECT * FROM receipt_items WHERE receipt_id = ? AND user_id = ? ORDER BY created_at, id")
     .bind(receiptId, userId)
     .all<ReceiptItemRow>();
   return { ...receipt, items: result.results.map(rowToReceiptItem) };
@@ -232,10 +242,7 @@ export async function updateReceipt(db: D1Database, userId: string, receiptId: s
   await db.batch([
     db
       .prepare(
-        `UPDATE receipts
-         SET merchant = ?, purchase_date = ?, currency = ?, subtotal = ?, tax = ?, discount = ?,
-             total = ?, category_id = ?, notes = ?, source_type = ?, updated_at = ?
-         WHERE id = ? AND user_id = ?`
+        "UPDATE receipts SET merchant = ?, purchase_date = ?, currency = ?, subtotal = ?, tax = ?, discount = ?, total = ?, category_id = ?, notes = ?, source_type = ?, updated_at = ? WHERE id = ? AND user_id = ?"
       )
       .bind(
         input.merchant,
@@ -252,10 +259,10 @@ export async function updateReceipt(db: D1Database, userId: string, receiptId: s
         receiptId,
         userId
       ),
-    db.prepare('DELETE FROM receipt_items WHERE receipt_id = ? AND user_id = ?').bind(receiptId, userId),
-    ...insertReceiptItemStatements(db, { receiptId, userId, createdAt: now, items: input.items })
+    db.prepare("DELETE FROM receipt_items WHERE receipt_id = ? AND user_id = ?").bind(receiptId, userId),
+    ...insertReceiptItemStatements(db, { receiptId, userId, createdAt: now, items: input.items }),
+    ...incrementUserMonthVersionStatements(db, userId, [receiptMonth(existing), receiptMonth(input)], now)
   ]);
-  await incrementUserMonthVersions(db, userId, [...new Set([receiptMonth(existing), receiptMonth(input)])]);
 
   return getReceiptDetail(db, userId, receiptId);
 }
@@ -264,7 +271,10 @@ export async function deleteReceipt(db: D1Database, userId: string, receiptId: s
   const existing = await findOwnedReceipt(db, userId, receiptId);
   if (!existing) return false;
 
-  await db.prepare('DELETE FROM receipts WHERE id = ? AND user_id = ?').bind(receiptId, userId).run();
-  await incrementUserMonthVersion(db, userId, receiptMonth(existing));
+  const now = nowIso();
+  await db.batch([
+    db.prepare("DELETE FROM receipts WHERE id = ? AND user_id = ?").bind(receiptId, userId),
+    ...incrementUserMonthVersionStatements(db, userId, [receiptMonth(existing)], now)
+  ]);
   return true;
 }

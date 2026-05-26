@@ -202,6 +202,46 @@ describe('receipt routes', () => {
       }
     });
   });
+  it('bounds receipt listing with limit and offset and validates long text filters', async () => {
+    await seedUser({ id: 'user_1', username: 'u1', password: 'user-secret' });
+    const user = await login('u1', 'user-secret');
+
+    await env.DB.batch(
+      Array.from({ length: 55 }, (_, index) =>
+        env.DB.prepare(
+          "INSERT INTO receipts (id, user_id, merchant, purchase_date, currency, subtotal, tax, discount, total, category_id, notes, source_type, created_at, updated_at) VALUES (?, 'user_1', ?, ?, 'USD', NULL, NULL, NULL, 100, 'cat_builtin_groceries', NULL, 'manual', ?, ?)"
+        ).bind(
+          'receipt_' + index,
+          'Market ' + String(index).padStart(2, '0'),
+          '2026-05-' + String((index % 28) + 1).padStart(2, '0'),
+          now,
+          now
+        )
+      )
+    );
+
+    const defaultResponse = await app.request('/api/receipts?month=2026-05', { headers: { cookie: user.cookie } }, env);
+    const boundedResponse = await app.request('/api/receipts?month=2026-05&limit=100&offset=50', {
+      headers: { cookie: user.cookie }
+    }, env);
+    const tooLargeLimitResponse = await app.request('/api/receipts?limit=101', { headers: { cookie: user.cookie } }, env);
+    const longMerchantResponse = await app.request('/api/receipts?merchant=' + 'x'.repeat(101), {
+      headers: { cookie: user.cookie }
+    }, env);
+    const longQResponse = await app.request('/api/receipts?q=' + 'x'.repeat(101), { headers: { cookie: user.cookie } }, env);
+
+    expect(defaultResponse.status).toBe(200);
+    const defaultBody = (await defaultResponse.json()) as { receipts: unknown[] };
+    expect(defaultBody.receipts).toHaveLength(50);
+
+    expect(boundedResponse.status).toBe(200);
+    const boundedBody = (await boundedResponse.json()) as { receipts: unknown[] };
+    expect(boundedBody.receipts).toHaveLength(5);
+
+    expect(tooLargeLimitResponse.status).toBe(400);
+    expect(longMerchantResponse.status).toBe(400);
+    expect(longQResponse.status).toBe(400);
+  });
 
   it('updates a receipt, replaces item lines, and increments affected month versions when moved', async () => {
     await seedUser({ id: 'user_1', username: 'u1', password: 'user-secret' });

@@ -312,6 +312,37 @@ describe('users, categories, and budgets routes', () => {
     expect(await monthVersion('user_1', '2026-05')).toBe(2);
   });
 
+  it('increments receipt month versions when deleting a custom category used by receipts and items', async () => {
+    await seedUser({ id: 'user_1', username: 'u1', password: 'user-secret' });
+    await seedCategory({ id: 'cat_user_1', userId: 'user_1', name: 'User 1 custom' });
+    const user = await login('u1', 'user-secret');
+
+    await env.DB
+      .prepare(
+        "INSERT INTO receipts (id, user_id, merchant, purchase_date, currency, subtotal, tax, discount, total, category_id, notes, source_type, created_at, updated_at) VALUES ('receipt_1', 'user_1', 'Store', '2026-06-15', 'USD', NULL, NULL, NULL, 1200, 'cat_user_1', NULL, 'manual', ?, ?)"
+      )
+      .bind(now, now)
+      .run();
+    await env.DB
+      .prepare(
+        "INSERT INTO receipt_items (id, receipt_id, user_id, name, quantity, unit_price, total_price, category_id, created_at) VALUES ('item_1', 'receipt_1', 'user_1', 'Item', 1, 1200, 1200, 'cat_user_1', ?)"
+      )
+      .bind(now)
+      .run();
+
+    const deleteResponse = await app.request(
+      '/api/categories/cat_user_1',
+      {
+        method: 'DELETE',
+        headers: { cookie: user.cookie, 'x-csrf-token': user.csrfToken }
+      },
+      env
+    );
+
+    expect(deleteResponse.status).toBe(200);
+    expect(await monthVersion('user_1', '2026-06')).toBe(1);
+  });
+
   it('returns 404 when deleting a missing budget for a visible category', async () => {
     await seedUser({ id: 'user_1', username: 'u1', password: 'user-secret' });
     const user = await login('u1', 'user-secret');
