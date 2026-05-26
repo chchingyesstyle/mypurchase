@@ -21,13 +21,13 @@ async function pbkdf2(password: string, salt: Uint8Array, iterations: number) {
 export async function hashPassword(password: string) {
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const hash = await pbkdf2(password, salt, ITERATIONS);
-  return `pbkdf2_sha256$${ITERATIONS}$${bytesToBase64(salt)}$${bytesToBase64(hash)}`;
+  return `v1$pbkdf2_sha256$${ITERATIONS}$${bytesToBase64(salt)}$${bytesToBase64(hash)}`;
 }
 
 export async function verifyPassword(password: string, stored: string) {
-  const [scheme, iterationText, saltText, hashText] = stored.split('$');
+  const [version, scheme, iterationText, saltText, hashText] = stored.split('$');
   const iterations = Number(iterationText);
-  if (scheme !== 'pbkdf2_sha256' || !Number.isSafeInteger(iterations) || !saltText || !hashText) return false;
+  if (version !== 'v1' || scheme !== 'pbkdf2_sha256' || !Number.isSafeInteger(iterations) || !saltText || !hashText) return false;
   const expected = base64ToBytes(hashText);
   const actual = new Uint8Array(await pbkdf2(password, base64ToBytes(saltText), iterations));
   if (actual.length !== expected.length) return false;

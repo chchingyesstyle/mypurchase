@@ -4,6 +4,7 @@ import { readD1Migrations } from '@cloudflare/vitest-pool-workers';
 import { Miniflare } from 'miniflare';
 import type { AppEnv } from '../../src/worker/env';
 import { app } from '../../src/worker/index';
+import { hashPassword, verifyPassword } from '../../src/worker/security/passwords';
 
 const migrationsPromise = readD1Migrations('migrations');
 let miniflare: Miniflare | undefined;
@@ -126,5 +127,15 @@ describe('auth routes', () => {
     expect(response.status).toBe(200);
     expect(response.headers.get('set-cookie')).toContain('mp_session=;');
     expect(response.headers.get('set-cookie')).toContain('Max-Age=0');
+  });
+});
+
+describe('password hashes', () => {
+  it('uses a versioned PBKDF2 format and verifies generated hashes', async () => {
+    const hash = await hashPassword('bootstrap-secret');
+
+    expect(hash).toMatch(/^v1\$pbkdf2_sha256\$210000\$/);
+    await expect(verifyPassword('bootstrap-secret', hash)).resolves.toBe(true);
+    await expect(verifyPassword('wrong-password', hash)).resolves.toBe(false);
   });
 });
