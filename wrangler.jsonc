@@ -11,14 +11,19 @@
     {
       "binding": "DB",
       "database_name": "mypurchase-db",
-      // Replace with the real database_id returned by `wrangler d1 create mypurchase-db`.
-      "database_id": "00000000-0000-0000-0000-000000000000"
+      "database_id": "db31f81a-6ecf-4a3c-ada8-1e58159cc45d"
+    }
+  ],
+  "routes": [
+    {
+      "pattern": "pur.cchk.uk",
+      "custom_domain": true
     }
   ],
   "ai": {
     "binding": "AI"
   },
   "vars": {
-    "APP_ENV": "local"
+    "APP_ENV": "production"
   }
 }
