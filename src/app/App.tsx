@@ -1,7 +1,13 @@
 import { useEffect, useState } from 'react';
 import { Layout } from './components/Layout';
+import { AdminUsersPage } from './pages/AdminUsersPage';
+import { BudgetsPage } from './pages/BudgetsPage';
+import { CategoriesPage } from './pages/CategoriesPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { LoginPage } from './pages/LoginPage';
+import { ReceiptDetailPage } from './pages/ReceiptDetailPage';
+import { RecordsPage } from './pages/RecordsPage';
+import { UploadPage } from './pages/UploadPage';
 import { AuthProvider, useAuth } from './state/auth';
 
 const pageTitles: Record<string, string> = {
@@ -51,9 +57,20 @@ function AppContent() {
 
   return (
     <Layout currentPage={currentPage} onNavigate={navigate}>
-      {currentPage === 'dashboard' ? <DashboardPage onNavigate={navigate} /> : <PlaceholderPage page={currentPage} />}
+      <PageRoute currentPage={currentPage} onNavigate={navigate} />
     </Layout>
   );
+}
+
+function PageRoute({ currentPage, onNavigate }: { currentPage: string; onNavigate: (page: string) => void }) {
+  if (currentPage === 'dashboard') return <DashboardPage onNavigate={onNavigate} />;
+  if (currentPage === 'upload') return <UploadPage onNavigate={onNavigate} />;
+  if (currentPage === 'records') return <RecordsPage onNavigate={onNavigate} />;
+  if (currentPage.startsWith('receipt/')) return <ReceiptDetailPage receiptId={currentPage.slice('receipt/'.length)} />;
+  if (currentPage === 'categories') return <CategoriesPage />;
+  if (currentPage === 'budgets') return <BudgetsPage />;
+  if (currentPage === 'admin-users') return <AdminUsersPage />;
+  return <PlaceholderPage page={currentPage} />;
 }
 
 function PlaceholderPage({ page }: { page: string }) {
