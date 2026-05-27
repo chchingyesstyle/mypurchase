@@ -43,10 +43,17 @@ function responseText(response: unknown): string | null {
   return null;
 }
 
+function hasAdviceShape(value: Record<string, unknown>) {
+  return ['overview', 'savingOpportunities', 'budgetWarnings', 'recurringNotes', 'itemInsights', 'nextMonthSuggestions'].some((key) => key in value);
+}
+
 function parseAiJson(response: unknown): Record<string, unknown> {
   if (response && typeof response === 'object' && !Array.isArray(response)) {
     const direct = response as Record<string, unknown>;
-    if (!('response' in direct) && !('text' in direct) && !('result' in direct) && !('output' in direct)) return direct;
+    if (!('response' in direct) && !('text' in direct) && !('result' in direct) && !('output' in direct)) {
+      if (!hasAdviceShape(direct)) throw new Error('AI report advice had no expected fields');
+      return direct;
+    }
   }
 
   const text = responseText(response);
@@ -54,7 +61,7 @@ function parseAiJson(response: unknown): Record<string, unknown> {
 
   try {
     const parsed = objectValue(JSON.parse(stripJsonFence(text)));
-    if (Object.keys(parsed).length === 0) throw new Error("AI report advice was empty");
+    if (!hasAdviceShape(parsed)) throw new Error("AI report advice had no expected fields");
     return parsed;
   } catch {
     throw new Error("AI report advice was not valid JSON");

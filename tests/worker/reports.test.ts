@@ -346,6 +346,23 @@ describe('monthly report routes', () => {
     expect(cachedResponse.status).toBe(404);
   });
 
+
+
+  it('treats malformed direct-object AI report advice as failed', async () => {
+    await seedUser({ id: 'user_1', username: 'u1', password: 'user-secret' });
+    const user = await login('u1');
+    await createReceipt(user);
+    aiRun.mockResolvedValueOnce({ foo: 'bar' });
+
+    const response = await generateReport(user);
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { report: { aiStatus: string } };
+    expect(body.report.aiStatus).toBe('failed');
+    const cachedResponse = await app.request('/api/reports/2026-05', { headers: { cookie: user.cookie } }, env);
+    expect(cachedResponse.status).toBe(404);
+  });
+
   it('treats corrupt cached report JSON as a cache miss', async () => {
     await seedUser({ id: 'user_1', username: 'u1', password: 'user-secret' });
     const user = await login('u1');
