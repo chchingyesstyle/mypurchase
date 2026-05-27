@@ -7,6 +7,7 @@ import { DashboardPage } from './pages/DashboardPage';
 import { LoginPage } from './pages/LoginPage';
 import { ReceiptDetailPage } from './pages/ReceiptDetailPage';
 import { RecordsPage } from './pages/RecordsPage';
+import { ReportPage } from './pages/ReportPage';
 import { UploadPage } from './pages/UploadPage';
 import { AuthProvider, useAuth } from './state/auth';
 
@@ -66,6 +67,7 @@ function PageRoute({ currentPage, onNavigate }: { currentPage: string; onNavigat
   if (currentPage === 'dashboard') return <DashboardPage onNavigate={onNavigate} />;
   if (currentPage === 'upload') return <UploadPage onNavigate={onNavigate} />;
   if (currentPage === 'records') return <RecordsPage onNavigate={onNavigate} />;
+  if (currentPage === 'reports') return <ReportPage />;
   if (currentPage.startsWith('receipt/')) return <ReceiptDetailPage receiptId={currentPage.slice('receipt/'.length)} />;
   if (currentPage === 'categories') return <CategoriesPage />;
   if (currentPage === 'budgets') return <BudgetsPage />;
