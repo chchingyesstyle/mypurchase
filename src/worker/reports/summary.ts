@@ -46,6 +46,7 @@ export type MonthlySummary = {
 };
 
 type BuildMonthlySummaryInput = {
+  month: string;
   receipts: SummaryReceipt[];
   items: SummaryReceiptItem[];
   budgets: Budget[];
@@ -133,7 +134,7 @@ export function buildMonthlySummary(input: BuildMonthlySummaryInput): MonthlySum
   const previousMerchantGroups = merchantMap(input.previousMonthReceipts);
   const receiptById = new Map(input.receipts.map((receipt) => [receipt.id, receipt]));
   const itemGroups = new Map<string, ItemGroup>();
-  const currentMonth = receiptMonth(input.receipts) || input.budgets[0]?.month || '';
+  const currentMonth = input.month || receiptMonth(input.receipts) || input.budgets[0]?.month || '';
   const previousMonthName = currentMonth ? previousMonth(currentMonth) : '';
 
   let subtotal = 0;

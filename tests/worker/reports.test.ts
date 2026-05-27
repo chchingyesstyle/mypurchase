@@ -310,6 +310,58 @@ describe('monthly report routes', () => {
     expect(JSON.stringify(aiRun.mock.calls)).not.toContain('999999');
   });
 
+
+
+  it('uses the requested month for previous-month comparisons when current month is empty', async () => {
+    await seedUser({ id: 'user_1', username: 'u1', password: 'user-secret' });
+    const user = await login('u1');
+    await createReceipt(user, {
+      merchant: 'April Market',
+      purchaseDate: '2026-04-10',
+      subtotal: 700,
+      total: 700,
+      items: [{ name: 'April Item', quantity: 1, unitPrice: 700, totalPrice: 700, categoryId: 'cat_builtin_groceries' }]
+    });
+
+    const response = await generateReport(user, '2026-05');
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { report: { summary: { totals: { total: number }; previousMonthComparisons: { month: string; total: number; delta: number } } } };
+    expect(body.report.summary.totals.total).toBe(0);
+    expect(body.report.summary.previousMonthComparisons).toMatchObject({ month: '2026-04', total: 700, delta: -700 });
+  });
+
+  it('treats malformed AI report advice as failed and does not save cache', async () => {
+    await seedUser({ id: 'user_1', username: 'u1', password: 'user-secret' });
+    const user = await login('u1');
+    await createReceipt(user);
+    aiRun.mockResolvedValueOnce({ response: 'not json' });
+
+    const response = await generateReport(user);
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { report: { aiStatus: string } };
+    expect(body.report.aiStatus).toBe('failed');
+    const cachedResponse = await app.request('/api/reports/2026-05', { headers: { cookie: user.cookie } }, env);
+    expect(cachedResponse.status).toBe(404);
+  });
+
+  it('treats corrupt cached report JSON as a cache miss', async () => {
+    await seedUser({ id: 'user_1', username: 'u1', password: 'user-secret' });
+    const user = await login('u1');
+    await createReceipt(user);
+    await env.DB.prepare(
+      `INSERT INTO monthly_reports (id, user_id, month, summary_json, ai_advice_json, records_version, created_at, updated_at)
+       VALUES ('report_bad', 'user_1', '2026-05', '{bad', '{}', 1, ?, ?)`
+    )
+      .bind(now, now)
+      .run();
+
+    const response = await app.request('/api/reports/2026-05', { headers: { cookie: user.cookie } }, env);
+
+    expect(response.status).toBe(404);
+  });
+
   it('validates report month parameters', async () => {
     await seedUser({ id: 'user_1', username: 'u1', password: 'user-secret' });
     const user = await login('u1');

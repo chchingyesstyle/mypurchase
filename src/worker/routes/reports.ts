@@ -28,13 +28,17 @@ reportsRoutes.get('/:month', async (c) => {
 reportsRoutes.post('/:month/generate', async (c) => {
   const session = await requireCsrf(c, await requireUser(c));
   const month = parseMonth(c.req.param('month'));
+  const startingRecordsVersion = await getCurrentRecordsVersion(c.env.DB, session.user.id, month);
   const data = await getReportData(c.env.DB, session.user.id, month);
-  const summary = buildMonthlySummary(data);
-  const recordsVersion = await getCurrentRecordsVersion(c.env.DB, session.user.id, month);
+  const summary = buildMonthlySummary({ month, ...data });
 
   try {
     const advice = await generateReportAdvice(c.env.AI, summary);
-    const report = await saveMonthlyReport(c.env.DB, { userId: session.user.id, month, summary, advice, recordsVersion });
+    const endingRecordsVersion = await getCurrentRecordsVersion(c.env.DB, session.user.id, month);
+    if (endingRecordsVersion !== startingRecordsVersion) {
+      throw new Error('Report source data changed during generation');
+    }
+    const report = await saveMonthlyReport(c.env.DB, { userId: session.user.id, month, summary, advice, recordsVersion: endingRecordsVersion });
     return c.json({ report });
   } catch {
     return c.json({
@@ -44,7 +48,7 @@ reportsRoutes.post('/:month/generate', async (c) => {
         month,
         summary,
         advice: null,
-        recordsVersion,
+        recordsVersion: startingRecordsVersion,
         aiStatus: 'failed',
         createdAt: null,
         updatedAt: null

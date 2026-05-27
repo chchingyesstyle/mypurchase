@@ -102,18 +102,22 @@ function rowToBudget(row: BudgetRow) {
   return rowToCamel(row) as Budget;
 }
 
-function parseReport(row: ReportRow): MonthlyReport {
-  return {
-    id: row.id,
-    userId: row.user_id,
-    month: row.month,
-    summary: JSON.parse(row.summary_json) as MonthlySummary,
-    advice: JSON.parse(row.ai_advice_json) as ReportAdvice,
-    recordsVersion: row.records_version,
-    aiStatus: 'ready',
-    createdAt: row.created_at,
-    updatedAt: row.updated_at
-  };
+function parseReport(row: ReportRow): MonthlyReport | null {
+  try {
+    return {
+      id: row.id,
+      userId: row.user_id,
+      month: row.month,
+      summary: JSON.parse(row.summary_json) as MonthlySummary,
+      advice: JSON.parse(row.ai_advice_json) as ReportAdvice,
+      recordsVersion: row.records_version,
+      aiStatus: 'ready',
+      createdAt: row.created_at,
+      updatedAt: row.updated_at
+    };
+  } catch {
+    return null;
+  }
 }
 
 async function listReceiptsForMonth(db: D1Database, userId: string, month: string) {
@@ -135,16 +139,17 @@ export async function getCurrentRecordsVersion(db: D1Database, userId: string, m
 export async function getReportData(db: D1Database, userId: string, month: string): Promise<ReportData> {
   const receipts = await listReceiptsForMonth(db, userId, month);
   const previousMonthReceipts = await listReceiptsForMonth(db, userId, previousMonth(month));
-  const receiptIds = receipts.map((receipt) => receipt.id);
-  let items: ReceiptItem[] = [];
-  if (receiptIds.length > 0) {
-    const placeholders = receiptIds.map(() => '?').join(', ');
-    const result = await db
-      .prepare(`SELECT * FROM receipt_items WHERE user_id = ? AND receipt_id IN (${placeholders}) ORDER BY created_at, id`)
-      .bind(userId, ...receiptIds)
-      .all<ReceiptItemRow>();
-    items = result.results.map(rowToReceiptItem);
-  }
+  const itemResult = await db
+    .prepare(
+      `SELECT receipt_items.*
+       FROM receipt_items
+       INNER JOIN receipts ON receipts.id = receipt_items.receipt_id AND receipts.user_id = receipt_items.user_id
+       WHERE receipt_items.user_id = ? AND receipts.purchase_date >= ? AND receipts.purchase_date < ?
+       ORDER BY receipt_items.created_at, receipt_items.id`
+    )
+    .bind(userId, month + '-01', nextMonth(month) + '-01')
+    .all<ReceiptItemRow>();
+  const items = itemResult.results.map(rowToReceiptItem);
   const budgetResult = await db.prepare('SELECT * FROM budgets WHERE user_id = ? AND month = ? ORDER BY category_id').bind(userId, month).all<BudgetRow>();
   return { receipts, items, budgets: budgetResult.results.map(rowToBudget), previousMonthReceipts };
 }

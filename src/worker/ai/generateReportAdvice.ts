@@ -50,12 +50,14 @@ function parseAiJson(response: unknown): Record<string, unknown> {
   }
 
   const text = responseText(response);
-  if (!text) return {};
+  if (!text) throw new Error("AI report advice was not JSON");
 
   try {
-    return objectValue(JSON.parse(stripJsonFence(text)));
+    const parsed = objectValue(JSON.parse(stripJsonFence(text)));
+    if (Object.keys(parsed).length === 0) throw new Error("AI report advice was empty");
+    return parsed;
   } catch {
-    return {};
+    throw new Error("AI report advice was not valid JSON");
   }
 }
 
