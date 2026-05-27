@@ -7,6 +7,7 @@ import { budgetsRoutes } from "./routes/budgets";
 import { categoriesRoutes } from "./routes/categories";
 import { extractionRoutes } from "./routes/extraction";
 import { receiptsRoutes } from "./routes/receipts";
+import { reportsRoutes } from "./routes/reports";
 import { usersRoutes } from "./routes/users";
 
 export const app = new Hono<{ Bindings: AppEnv }>();
@@ -38,6 +39,7 @@ app.route("/api/users", usersRoutes);
 app.route("/api/categories", categoriesRoutes);
 app.route("/api/budgets", budgetsRoutes);
 app.route("/api/receipts", receiptsRoutes);
+app.route("/api/reports", reportsRoutes);
 app.route("/api", extractionRoutes);
 
 app.get("*", async (c) => c.env.ASSETS.fetch(c.req.raw));
