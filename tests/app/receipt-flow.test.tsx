@@ -152,6 +152,47 @@ describe('receipt management flow', () => {
     );
   });
 
+  it('blocks receipt save when money fields are invalid', async () => {
+    const fetchMock = mockFetch((path, init) => {
+      const method = init?.method ?? 'GET';
+      if (path === '/api/auth/me') return { user: member, csrfToken: 'csrf-current' };
+      if (path === '/api/categories' && method === 'GET') return { categories };
+      if (path === '/api/extract-receipt') {
+        return {
+          draft: {
+            merchant: 'Corner Market',
+            purchaseDate: '2026-05-12',
+            currency: 'USD',
+            subtotal: 1299,
+            tax: 101,
+            discount: 0,
+            total: 1400,
+            categoryId: 'cat_builtin_groceries',
+            notes: null,
+            sourceType: 'receipt_image',
+            items: [{ name: 'Milk', quantity: 1, unitPrice: 499, totalPrice: 499, categoryId: 'cat_builtin_groceries' }]
+          }
+        };
+      }
+      return { ok: true };
+    });
+    window.location.hash = '#upload';
+
+    render(<App />);
+
+    await screen.findByRole('heading', { name: /upload receipt/i });
+    await userEvent.upload(screen.getByLabelText(/receipt file/i), new File(['png'], 'receipt.png', { type: 'image/png' }));
+    await userEvent.click(screen.getByRole('button', { name: /extract receipt/i }));
+    await screen.findByDisplayValue('Corner Market');
+
+    await userEvent.clear(screen.getByLabelText(/^total$/i));
+    await userEvent.type(screen.getByLabelText(/^total$/i), '-1.00');
+    await userEvent.click(screen.getByRole('button', { name: /save receipt/i }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/total must be a valid non-negative amount/i);
+    expect(fetchMock.mock.calls.some(([path, init]) => path === '/api/receipts' && init?.method === 'POST')).toBe(false);
+  });
+
   it('renders returned receipts on the records page', async () => {
     mockFetch((path) => {
       if (path === '/api/auth/me') return { user: member, csrfToken: 'csrf-current' };
@@ -213,5 +254,38 @@ describe('receipt management flow', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/categories', expect.objectContaining({ method: 'GET' }));
     expect(fetchMock.mock.calls.some(([path]) => String(path).startsWith('/api/budgets?month='))).toBe(true);
     expect(fetchMock).toHaveBeenCalledWith('/api/users', expect.objectContaining({ method: 'GET' }));
+  });
+
+  it('uses category names for budgets and blocks invalid budget amounts', async () => {
+    const fetchMock = mockFetch((path, init) => {
+      const method = init?.method ?? 'GET';
+      if (path === '/api/auth/me') return { user: member, csrfToken: 'csrf-current' };
+      if (path === '/api/categories' && method === 'GET') return { categories };
+      if (path.startsWith('/api/budgets?month=')) return { budgets: [] };
+      if (path.startsWith('/api/budgets/cat_builtin_groceries/') && method === 'PUT') {
+        return { budget: { categoryId: 'cat_builtin_groceries', month: '2026-05', amount: 2500, currency: 'USD' } };
+      }
+      return { ok: true };
+    });
+    window.location.hash = '#budgets';
+
+    render(<App />);
+
+    await screen.findByRole('heading', { name: /budgets/i });
+    const categorySelect = await screen.findByLabelText(/category/i);
+    expect(categorySelect).toHaveDisplayValue('Groceries');
+
+    await userEvent.type(screen.getByLabelText(/amount/i), '-25');
+    await userEvent.click(screen.getByRole('button', { name: /save budget/i }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/amount must be a valid non-negative amount/i);
+    expect(fetchMock.mock.calls.some(([path, init]) => String(path).startsWith('/api/budgets/cat_builtin_groceries/') && init?.method === 'PUT')).toBe(false);
+
+    await userEvent.clear(screen.getByLabelText(/amount/i));
+    await userEvent.type(screen.getByLabelText(/amount/i), '25.00');
+    await userEvent.click(screen.getByRole('button', { name: /save budget/i }));
+
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.some(([path, init]) => String(path).startsWith('/api/budgets/cat_builtin_groceries/') && init?.method === 'PUT')).toBe(true)
+    );
   });
 });

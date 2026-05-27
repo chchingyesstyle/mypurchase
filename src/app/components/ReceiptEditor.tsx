@@ -1,6 +1,7 @@
 import { Plus, Save, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import type { Category, ReceiptInput, ReceiptItemInput } from '../../shared/types';
+import { localDateInputValue } from '../utils/localDate';
 import { Button } from './Button';
 
 export type ReceiptDraft = Omit<ReceiptInput, 'subtotal' | 'tax' | 'discount' | 'total' | 'items'> & {
@@ -43,6 +44,8 @@ type ItemState = {
   categoryId: string;
 };
 
+class FormValidationError extends Error {}
+
 export function ReceiptEditor({
   categories,
   draft,
@@ -64,10 +67,19 @@ export function ReceiptEditor({
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setSaving(true);
     setError(null);
+
+    let payload: ReceiptInput;
     try {
-      await onSave(payloadFromState(form));
+      payload = payloadFromState(form);
+    } catch (validationError) {
+      setError(validationError instanceof Error ? validationError.message : 'Receipt has invalid values.');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await onSave(payload);
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Receipt could not be saved.');
     } finally {
@@ -237,7 +249,7 @@ function MoneyField({ label, onChange, required = false, value }: { label: strin
 function stateFromDraft(draft: ReceiptDraft): ReceiptEditorState {
   return {
     merchant: draft.merchant ?? '',
-    purchaseDate: draft.purchaseDate || todayIsoDate(),
+    purchaseDate: draft.purchaseDate || localDateInputValue(),
     currency: draft.currency || 'USD',
     subtotal: moneyToDecimal(draft.subtotal),
     tax: moneyToDecimal(draft.tax),
@@ -262,18 +274,18 @@ function payloadFromState(form: ReceiptEditorState): ReceiptInput {
     merchant: form.merchant.trim(),
     purchaseDate: form.purchaseDate,
     currency: form.currency.trim().toUpperCase(),
-    subtotal: optionalMoney(form.subtotal),
-    tax: optionalMoney(form.tax),
-    discount: optionalMoney(form.discount),
-    total: requiredMoney(form.total),
+    subtotal: optionalMoney('Subtotal', form.subtotal),
+    tax: optionalMoney('Tax', form.tax),
+    discount: optionalMoney('Discount', form.discount),
+    total: requiredMoney('Total', form.total),
     categoryId: form.categoryId || null,
     notes: form.notes.trim() || null,
     sourceType: form.sourceType,
-    items: form.items.map((item) => ({
+    items: form.items.map((item, index) => ({
       name: item.name.trim(),
       quantity: Number(item.quantity),
-      unitPrice: requiredMoney(item.unitPrice),
-      totalPrice: requiredMoney(item.totalPrice),
+      unitPrice: requiredMoney(`Item ${index + 1} unit price`, item.unitPrice),
+      totalPrice: requiredMoney(`Item ${index + 1} line total`, item.totalPrice),
       categoryId: item.categoryId || null
     }))
   };
@@ -295,17 +307,20 @@ function moneyToDecimal(value: number | null | undefined) {
   return (value / 100).toFixed(2);
 }
 
-function optionalMoney(value: string) {
-  return value.trim() === '' ? null : requiredMoney(value);
+function optionalMoney(label: string, value: string) {
+  return value.trim() === '' ? null : requiredMoney(label, value);
 }
 
-function requiredMoney(value: string) {
+function requiredMoney(label: string, value: string) {
+  const parsed = parseMoney(value);
+  if (parsed === null) throw new FormValidationError(`${label} must be a valid non-negative amount.`);
+  return parsed;
+}
+
+function parseMoney(value: string) {
   const normalized = value.trim().replace(/[$,\s]/g, '');
+  if (!/^\d+(\.\d{1,2})?$/.test(normalized)) return null;
   const number = Number(normalized);
-  if (!Number.isFinite(number) || number < 0) return 0;
+  if (!Number.isFinite(number) || number < 0) return null;
   return Math.round(number * 100);
-}
-
-function todayIsoDate() {
-  return new Date().toISOString().slice(0, 10);
 }

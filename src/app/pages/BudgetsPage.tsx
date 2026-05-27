@@ -1,8 +1,10 @@
 import { Save } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import type { Category } from '../../shared/types';
 import { apiRequest } from '../api/client';
 import { Button } from '../components/Button';
 import { DataTable, type DataTableColumn } from '../components/DataTable';
+import { localMonthInputValue } from '../utils/localDate';
 import { formatMoney } from './RecordsPage';
 
 type BudgetRow = {
@@ -15,11 +17,28 @@ type BudgetRow = {
 };
 
 export function BudgetsPage() {
-  const [month, setMonth] = useState(currentMonth());
+  const [month, setMonth] = useState(localMonthInputValue());
   const [budgets, setBudgets] = useState<BudgetRow[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [categoryId, setCategoryId] = useState('');
   const [amount, setAmount] = useState('');
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    apiRequest<{ categories: Category[] }>('/api/categories')
+      .then((response) => {
+        if (!active) return;
+        setCategories(response.categories);
+        setCategoryId((current) => current || response.categories[0]?.id || '');
+      })
+      .catch(() => {
+        if (active) setCategories([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -35,17 +54,29 @@ export function BudgetsPage() {
     };
   }, [month]);
 
+  const categoryNames = useMemo(() => new Map(categories.map((category) => [category.id, category.name])), [categories]);
+
   async function saveBudget(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
-    const minorUnits = Math.round(Number(amount) * 100);
+
+    if (!categoryId) {
+      setError('Choose a category before saving a budget.');
+      return;
+    }
+
+    const minorUnits = parseMoney(amount);
+    if (minorUnits === null) {
+      setError('Amount must be a valid non-negative amount.');
+      return;
+    }
+
     try {
       const response = await apiRequest<{ budget: BudgetRow }>(`/api/budgets/${encodeURIComponent(categoryId)}/${encodeURIComponent(month)}`, {
         method: 'PUT',
-        body: { amount: Number.isFinite(minorUnits) ? minorUnits : 0, currency: 'USD' }
+        body: { amount: minorUnits, currency: 'USD' }
       });
       setBudgets((current) => [...current.filter((budget) => budget.categoryId !== response.budget.categoryId), response.budget]);
-      setCategoryId('');
       setAmount('');
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Budget could not be saved.');
@@ -53,7 +84,7 @@ export function BudgetsPage() {
   }
 
   const columns: DataTableColumn<BudgetRow>[] = [
-    { key: 'category', header: 'Category ID', render: (budget) => budget.categoryId },
+    { key: 'category', header: 'Category', render: (budget) => categoryNames.get(budget.categoryId) ?? budget.categoryId },
     { key: 'month', header: 'Month', render: (budget) => budget.month },
     { key: 'amount', header: 'Budget', className: 'money-column', render: (budget) => formatMoney(budget.amount, budget.currency) }
   ];
@@ -76,14 +107,21 @@ export function BudgetsPage() {
 
       <form className="inline-form" onSubmit={saveBudget}>
         <label>
-          <span>Category ID</span>
-          <input required value={categoryId} onChange={(event) => setCategoryId(event.target.value)} />
+          <span>Category</span>
+          <select disabled={categories.length === 0} required value={categoryId} onChange={(event) => setCategoryId(event.target.value)}>
+            {categories.length === 0 ? <option value="">No categories available</option> : null}
+            {categories.map((category) => (
+              <option key={category.id} value={category.id}>
+                {category.name}
+              </option>
+            ))}
+          </select>
         </label>
         <label>
           <span>Amount</span>
           <input inputMode="decimal" required value={amount} onChange={(event) => setAmount(event.target.value)} />
         </label>
-        <Button icon={<Save size={16} />} type="submit" variant="primary">
+        <Button disabled={categories.length === 0} icon={<Save size={16} />} type="submit" variant="primary">
           Save budget
         </Button>
       </form>
@@ -93,6 +131,10 @@ export function BudgetsPage() {
   );
 }
 
-function currentMonth() {
-  return new Date().toISOString().slice(0, 7);
+function parseMoney(value: string) {
+  const normalized = value.trim().replace(/[$,\s]/g, '');
+  if (!/^\d+(\.\d{1,2})?$/.test(normalized)) return null;
+  const number = Number(normalized);
+  if (!Number.isFinite(number) || number < 0) return null;
+  return Math.round(number * 100);
 }

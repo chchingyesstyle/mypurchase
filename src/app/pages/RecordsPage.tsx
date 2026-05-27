@@ -2,6 +2,7 @@ import { Search } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { apiRequest } from '../api/client';
 import { DataTable, type DataTableColumn } from '../components/DataTable';
+import { localMonthInputValue } from '../utils/localDate';
 
 type ReceiptRow = {
   id: string;
@@ -98,7 +99,7 @@ export function formatMoney(value: number, currency = 'USD') {
 }
 
 function currentMonth() {
-  return new Date().toISOString().slice(0, 7);
+  return localMonthInputValue();
 }
 
 function sourceLabel(sourceType: string) {
