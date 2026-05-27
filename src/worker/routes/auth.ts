@@ -48,7 +48,8 @@ authRoutes.post("/login", async (c) => {
           passwordHash: await hashPassword(credentials.password),
           role: "admin"
         });
-      } catch {
+      } catch (error) {
+        console.error('bootstrap create failed', error);
         user = await findUserByUsername(c.env.DB, "admin");
         if (!user) throw new Error("Failed to create bootstrap admin");
       }

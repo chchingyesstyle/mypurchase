@@ -23,6 +23,7 @@ function errorCode(status: number) {
 }
 
 app.onError((error, c) => {
+  console.error('worker error', error);
   if (error instanceof HTTPException) {
     const status = error.status as StatusCode;
     c.status(status);

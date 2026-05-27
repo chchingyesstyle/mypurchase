@@ -196,25 +196,25 @@ describe('password hashes', () => {
   it('uses a versioned PBKDF2 format and verifies generated hashes', async () => {
     const hash = await hashPassword('bootstrap-secret');
 
-    expect(hash).toMatch(/^v1\$pbkdf2_sha256\$210000\$/);
+    expect(hash).toMatch(/^v1\$pbkdf2_sha256\$100000\$/);
     await expect(verifyPassword('bootstrap-secret', hash)).resolves.toBe(true);
     await expect(verifyPassword('wrong-password', hash)).resolves.toBe(false);
   });
 
   it('returns false for malformed hashes instead of throwing', async () => {
-    await expect(verifyPassword('bootstrap-secret', 'v1$pbkdf2_sha256$210000$not-base64$%%%')).resolves.toBe(
+    await expect(verifyPassword('bootstrap-secret', 'v1$pbkdf2_sha256$100000$not-base64$%%%')).resolves.toBe(
       false
     );
-    await expect(verifyPassword('bootstrap-secret', 'v1$pbkdf2_sha256$210000$missing-hash')).resolves.toBe(false);
-    await expect(verifyPassword('bootstrap-secret', 'v2$pbkdf2_sha256$210000$salt$hash')).resolves.toBe(false);
+    await expect(verifyPassword('bootstrap-secret', 'v1$pbkdf2_sha256$100000$missing-hash')).resolves.toBe(false);
+    await expect(verifyPassword('bootstrap-secret', 'v2$pbkdf2_sha256$100000$salt$hash')).resolves.toBe(false);
   });
 
   it('returns false for invalid or out-of-range iterations', async () => {
     const hash = await hashPassword('bootstrap-secret');
 
-    await expect(verifyPassword('bootstrap-secret', hash.replace('$210000$', '$99999$'))).resolves.toBe(false);
-    await expect(verifyPassword('bootstrap-secret', hash.replace('$210000$', '$600001$'))).resolves.toBe(false);
-    await expect(verifyPassword('bootstrap-secret', hash.replace('$210000$', '$not-a-number$'))).resolves.toBe(
+    await expect(verifyPassword('bootstrap-secret', hash.replace('$100000$', '$99999$'))).resolves.toBe(false);
+    await expect(verifyPassword('bootstrap-secret', hash.replace('$100000$', '$600001$'))).resolves.toBe(false);
+    await expect(verifyPassword('bootstrap-secret', hash.replace('$100000$', '$not-a-number$'))).resolves.toBe(
       false
     );
   });
