@@ -80,6 +80,25 @@ describe('authenticated frontend shell', () => {
     );
   });
 
+
+  it('announces login failures accessibly', async () => {
+    mockFetch(
+      jsonResponse({ error: 'Authentication required' }, 401),
+      jsonResponse({ error: { message: 'Invalid credentials' } }, 401)
+    );
+
+    render(<App />);
+
+    await userEvent.type(await screen.findByLabelText(/username/i), 'member');
+    await userEvent.type(screen.getByLabelText(/password/i), 'bad-secret');
+    await userEvent.click(screen.getByRole('button', { name: /sign in/i }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Invalid credentials');
+    expect(screen.getByLabelText(/username/i)).toHaveAccessibleDescription('Invalid credentials');
+    expect(screen.getByLabelText(/password/i)).toHaveAccessibleDescription('Invalid credentials');
+  });
+
   it('shows dashboard navigation to authenticated users', async () => {
     mockFetch(jsonResponse({ user, csrfToken: 'csrf-current' }));
 
@@ -98,6 +117,38 @@ describe('authenticated frontend shell', () => {
     render(<App />);
 
     await waitFor(() => expect(screen.getAllByRole('link', { name: /admin users/i }).length).toBeGreaterThan(0));
+  });
+
+
+  it('refreshes CSRF and retries one failed mutating API call', async () => {
+    const fetchMock = mockFetch(
+      jsonResponse({ error: { code: 'forbidden', message: 'Invalid CSRF token' } }, 403),
+      jsonResponse({ user, csrfToken: 'csrf-refreshed' }),
+      jsonResponse({ ok: true })
+    );
+    setCsrfToken('csrf-stale');
+
+    await apiRequest('/api/receipts', { method: 'POST', body: { merchant: 'Grocery' } });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/auth/me', expect.objectContaining({ method: 'GET', credentials: 'include' }));
+    const [, retryInit] = fetchMock.mock.calls[2];
+    const retryHeaders = new Headers(retryInit?.headers);
+    expect(retryHeaders.get('x-csrf-token')).toBe('csrf-refreshed');
+  });
+
+  it('preserves browser multipart headers for FormData uploads', async () => {
+    const fetchMock = mockFetch(jsonResponse({ ok: true }));
+    const formData = new FormData();
+    formData.set('receipt', new Blob(['abc'], { type: 'image/png' }), 'receipt.png');
+    setCsrfToken('csrf-known');
+
+    await apiRequest('/api/extract-receipt', { method: 'POST', body: formData });
+
+    const [, init] = fetchMock.mock.calls[0];
+    const headers = new Headers(init?.headers);
+    expect(init?.body).toBe(formData);
+    expect(headers.get('content-type')).toBeNull();
+    expect(headers.get('x-csrf-token')).toBe('csrf-known');
   });
 
   it('sends the CSRF token on mutating API calls', async () => {

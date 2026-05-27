@@ -37,6 +37,7 @@ export function LoginPage() {
           <label>
             <span>Username</span>
             <input
+              aria-describedby={error ? 'login-error' : undefined}
               autoComplete="username"
               name="username"
               onChange={(event) => setUsername(event.target.value)}
@@ -47,6 +48,7 @@ export function LoginPage() {
           <label>
             <span>Password</span>
             <input
+              aria-describedby={error ? 'login-error' : undefined}
               autoComplete="current-password"
               name="password"
               onChange={(event) => setPassword(event.target.value)}
@@ -55,7 +57,11 @@ export function LoginPage() {
               value={password}
             />
           </label>
-          {error ? <p className="form-error">{error}</p> : null}
+          {error ? (
+            <p aria-live="polite" className="form-error" id="login-error" role="alert">
+              {error}
+            </p>
+          ) : null}
           <Button disabled={submitting} icon={<LockKeyhole size={16} />} type="submit" variant="primary">
             {submitting ? 'Signing in' : 'Sign in'}
           </Button>

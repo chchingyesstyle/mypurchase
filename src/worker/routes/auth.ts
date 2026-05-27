@@ -79,12 +79,12 @@ authRoutes.get("/me", async (c) => {
 });
 
 authRoutes.post("/logout", async (c) => {
+  c.header("set-cookie", clearSessionCookie());
   const session = await getCurrentUser(c);
   if (session) {
     await requireCsrf(c, session);
     await deleteSession(c.env.DB, session.id);
   }
-  c.header("set-cookie", clearSessionCookie());
   return c.json({ ok: true });
 });
 

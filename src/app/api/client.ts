@@ -2,6 +2,7 @@ type ApiBody = BodyInit | Record<string, unknown> | unknown[] | null;
 
 type ApiRequestOptions = Omit<RequestInit, 'body' | 'credentials'> & {
   body?: ApiBody;
+  retryOnCsrf?: boolean;
 };
 
 type ApiErrorBody = {
@@ -32,7 +33,7 @@ export function getCsrfToken() {
 }
 
 export async function apiRequest<T = unknown>(path: string, options: ApiRequestOptions = {}): Promise<T> {
-  const { body, ...fetchOptions } = options;
+  const { body, retryOnCsrf = true, ...fetchOptions } = options;
   const method = (options.method ?? 'GET').toUpperCase();
   const headers = new Headers(options.headers);
   const requestOptions: RequestInit = {
@@ -57,10 +58,30 @@ export async function apiRequest<T = unknown>(path: string, options: ApiRequestO
   const parsedBody = await parseResponseBody(response);
 
   if (!response.ok) {
+    if (retryOnCsrf && response.status === 403 && isMutatingMethod(method) && isInvalidCsrf(parsedBody)) {
+      const refreshed = await refreshCsrfToken();
+      if (refreshed) return apiRequest<T>(path, { ...options, retryOnCsrf: false });
+    }
     throw new ApiError(response.status, parsedBody, `Request failed with status ${response.status}`);
   }
 
   return parsedBody as T;
+}
+
+function isInvalidCsrf(body: unknown) {
+  if (!body || typeof body !== 'object') return false;
+  const error = (body as ApiErrorBody).error;
+  if (typeof error === 'string') return error.toLowerCase().includes('csrf');
+  return error?.message?.toLowerCase().includes('csrf') || error?.code === 'forbidden';
+}
+
+async function refreshCsrfToken() {
+  const response = await fetch('/api/auth/me', { method: 'GET', credentials: 'include' });
+  if (!response.ok) return false;
+  const body = (await parseResponseBody(response)) as { csrfToken?: unknown } | null;
+  if (typeof body?.csrfToken !== 'string') return false;
+  setCsrfToken(body.csrfToken);
+  return true;
 }
 
 function isMutatingMethod(method: string) {
