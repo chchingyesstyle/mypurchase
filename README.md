@@ -130,3 +130,35 @@ Deploy:
 ```bash
 npm run deploy
 ```
+
+## GitHub auto deploy
+
+This repo includes a GitHub Actions workflow at `.github/workflows/deploy.yml`.
+Every push to `main` will:
+
+- install dependencies
+- run `npm run typecheck`
+- run `npm test`
+- run `npm run build`
+- apply `npm run db:migrate:remote`
+- run `npm run deploy`
+
+You need to add these GitHub repository secrets in `Settings -> Secrets and variables -> Actions`:
+
+- `CLOUDFLARE_API_TOKEN`
+- `CLOUDFLARE_ACCOUNT_ID`
+
+Use this Cloudflare account ID:
+
+```text
+73679bad8ad93a1cf9bea8ba7f52d906
+```
+
+The API token should have at least these permissions:
+
+- `Account / Cloudflare Workers / Edit`
+- `Account / D1 / Edit`
+- `Zone / Workers Routes / Edit`
+- `Zone / Zone / Read`
+
+After adding the two secrets, push any commit to `main` or run the workflow manually from the GitHub Actions tab.
