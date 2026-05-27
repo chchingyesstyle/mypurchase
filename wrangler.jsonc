@@ -11,6 +11,7 @@
     {
       "binding": "DB",
       "database_name": "mypurchase-db",
+      // Replace with the real database_id returned by `wrangler d1 create mypurchase-db`.
       "database_id": "00000000-0000-0000-0000-000000000000"
     }
   ],

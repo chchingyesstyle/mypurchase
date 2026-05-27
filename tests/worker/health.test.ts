@@ -14,7 +14,7 @@ function unusedBinding<T>(name: string): T {
 }
 
 const env: AppEnv = {
-  ADMIN_BOOTSTRAP_PASSWORD: 'yesasia',
+  ADMIN_BOOTSTRAP_PASSWORD: 'bootstrap-secret',
   APP_ENV: 'test',
   ASSETS: unusedBinding<Fetcher>('ASSETS'),
   AI: unusedBinding<Ai>('AI'),
