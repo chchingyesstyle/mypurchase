@@ -69,3 +69,7 @@ export async function updateUserPassword(db: D1Database, userId: string, passwor
     .bind(passwordHash, nowIso(), userId)
     .run();
 }
+
+export async function deleteUser(db: D1Database, userId: string) {
+  await db.prepare('DELETE FROM users WHERE id = ?').bind(userId).run();
+}
